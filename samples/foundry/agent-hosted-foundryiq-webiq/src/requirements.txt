@@ -1,0 +1,7 @@
+-c constraints.txt
+azure-ai-agentserver-langgraph==1.0.0b17
+azure-identity>=1.25,<2
+langchain>=1.0,<2
+langchain-openai==1.1.11
+langchain-mcp-adapters>=0.3,<0.4
+python-dotenv>=1.1,<2

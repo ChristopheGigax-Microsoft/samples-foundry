@@ -1,0 +1,6 @@
+subscription_id     = "YOUR-SUBSCRIPTION-ID"
+resource_group_name = "rg-demo-lnca-maia-foundry-cgigax"
+location            = "francecentral"
+
+# Check quotas and Foundry IQ compatibility before changing either model.
+# DataZoneStandard keeps chat processing in the EU data zone.

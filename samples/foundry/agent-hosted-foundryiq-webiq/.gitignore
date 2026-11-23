@@ -1,0 +1,13 @@
+.azure/
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+deploy/.terraform/
+deploy/*.tfstate*
+deploy/*.tfplan
+deploy/*.tfvars
+deploy/*.tfvars.json
+deploy/crash.log

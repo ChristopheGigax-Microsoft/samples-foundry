@@ -19,7 +19,7 @@ samples/
 
 | Sample | Status |
 | --- | --- |
-| [Hosted agent with Foundry IQ and Web IQ](samples/foundry/agent-hosted-foundryiq-webiq/) | Coming soon |
+| [Hosted agent with Foundry IQ and Web IQ](samples/foundry/agent-hosted-foundryiq-webiq/) | Deployed; document and web retrieval verified |
 
 Each sample folder should include its own README explaining what it demonstrates,
 the prerequisites, and how to run it.

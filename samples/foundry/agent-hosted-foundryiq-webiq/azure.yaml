@@ -1,0 +1,43 @@
+name: foundry-iq-webiq-demo
+services:
+  iq-tools:
+    host: azure.ai.toolbox
+    tools:
+      - type: mcp
+        server_label: foundryiq
+        project_connection_id: foundry-iq
+        allowed_tools:
+          - knowledge_base_retrieve
+        require_approval: never
+      - type: mcp
+        server_label: webiq
+        project_connection_id: web-iq
+        allowed_tools:
+          - web
+        require_approval: never
+  iq-agent:
+    kind: hosted
+    name: iq-agent
+    project: ./src
+    language: python
+    host: azure.ai.agent
+    description: Technical demo combining document retrieval with public web evidence.
+    startupCommand: python main.py
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    protocols:
+      - protocol: responses
+        version: "2.0.0"
+    environmentVariables:
+      - name: AGENT_MODE
+        value: ${AGENT_MODE}
+      - name: AZURE_AI_PROJECT_ENDPOINT
+        value: ${AZURE_AI_PROJECT_ENDPOINT}
+      - name: MODEL_ENDPOINT
+        value: ${MODEL_ENDPOINT}
+      - name: CHAT_DEPLOYMENT
+        value: ${CHAT_DEPLOYMENT}
+      - name: TOOLBOX_ENDPOINT
+        value: ${TOOLBOX_ENDPOINT}

@@ -1,0 +1,14 @@
+# Keep the preview host's telemetry and OpenAI dependencies compatible.
+azure-ai-projects==2.0.0
+azure-monitor-opentelemetry-exporter==1.0.0b48
+opentelemetry-api==1.39.0
+opentelemetry-sdk==1.39.0
+opentelemetry-semantic-conventions==0.60b0
+opentelemetry-instrumentation==0.60b0
+opentelemetry-instrumentation-threading==0.60b0
+opentelemetry-exporter-otlp-proto-http==1.39.0
+opentelemetry-exporter-otlp-proto-common==1.39.0
+opentelemetry-proto==1.39.0
+protobuf>=5,<7
+wrapt<2
+uuid-utils>=0.12,<1
