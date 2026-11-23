@@ -31,6 +31,9 @@ services:
       - protocol: responses
         version: "2.0.0"
     environmentVariables:
+      # Preview SDK console logs can contain message bodies; export spans only.
+      - name: AGENT_APP_INSIGHTS_ENABLED
+        value: "false"
       - name: AGENT_MODE
         value: ${AGENT_MODE}
       - name: AZURE_AI_PROJECT_ENDPOINT

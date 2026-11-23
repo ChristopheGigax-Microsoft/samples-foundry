@@ -14,12 +14,14 @@ Foundry Hosted Agent -> LangChain -> Foundry Toolbox (MCP)
 `src/agent.py` contains the agent. `src/main.py` uses the Microsoft LangGraph
 hosting adapter, without a custom HTTP server. `deploy/` contains Terraform and
 small setup scripts. Terraform owns Azure infrastructure; the Python setup
-script owns Search data-plane objects and project connections; `azd` publishes
+script owns Search data-plane objects and retrieval connections; Terraform also
+owns the Application Insights project connection. `azd` publishes
 the toolbox and hosted agent versions.
 
 **Deployment status:** Terraform infrastructure is provisioned in
 `rg-demo-lnca-maia-foundry-cgigax`: Foundry project/models, Search, Blob Storage,
-Web IQ and RBAC. Hosted agent `iq-agent` version **6** is active in **tools mode**.
+Web IQ, workspace-based Application Insights and RBAC. Hosted agent `iq-agent`
+version **8** is active in **tools mode**.
 The `iq-tools` toolbox, Blob knowledge source, `documents` knowledge base and
 both managed MCP connections are configured. A real hosted invocation retrieved
 a synthetic document and live Web IQ results, then cited both source URLs.
@@ -28,6 +30,9 @@ A maintenance corpus of 15 PDF/Word files has since been uploaded to the private
 Blob container and indexed into 105 chunks. Those documents are not part of this
 repository. A document-only hosted query about a site's specialization returned
 a grounded answer and a citation to the uploaded PDF. Event Grid is unchanged.
+Application Insights is connected and verified: a version 8 Web IQ invocation
+produced a successful request with four correlated LangChain spans. The test
+prompt and retrieved passage were absent from those spans.
 
 ## Prerequisites
 
@@ -56,6 +61,8 @@ destroyed by Terraform.
 Copy-Item deploy\terraform.tfvars.example deploy\terraform.tfvars
 # Set your subscription_id in deploy\terraform.tfvars.
 az provider register --namespace Microsoft.WebIQ --wait
+az provider register --namespace Microsoft.Insights --wait
+az provider register --namespace Microsoft.OperationalInsights --wait
 terraform -chdir=deploy init
 terraform -chdir=deploy plan -out=demo.tfplan
 terraform -chdir=deploy apply demo.tfplan
@@ -63,7 +70,8 @@ terraform -chdir=deploy apply demo.tfplan
 
 This creates a Foundry account/project, chat and embedding deployments, AI
 Search S1 (one partition and one replica), private Blob container, managed
-identities/RBAC, and a global Web IQ billing resource.
+identities/RBAC, a global Web IQ billing resource, Application Insights and its
+Log Analytics workspace. The project monitoring connection is created automatically.
 Terraform inherits existing resource-group tags and serializes Foundry child
 updates to avoid Azure operation conflicts.
 
@@ -160,6 +168,48 @@ Set `AGENT_MODE=chat` for local development without a toolbox. The model endpoin
 is the project endpoint followed by `/openai/v1/`, not the account endpoint used
 by the Search ingestion configuration.
 
+## Observability
+
+Terraform connects `appi-iq-a6fb988f` to project `iq-demo` through an `AppInsights`
+connection. Foundry injects the connection string into hosted containers; the
+SDK can also resolve it through the project. Do not copy it into `azure.yaml`
+or Git. `terraform -chdir=deploy output -json observability` returns only
+resource identifiers, including the Application Insights application ID.
+
+The SDK exports request and LangChain spans with execution times, model/tool
+names and token usage when available. The sample overrides its preview
+adapter's content-recording default: prompts, responses and retrieved content
+are redacted, and tool arguments are omitted. It reuses the host exporter rather
+than configuring a second Azure Monitor exporter or LangSmith integration.
+`AGENT_APP_INSIGHTS_ENABLED=false` disables export of SDK console messages,
+which can contain document content; console logs remain available through
+`azd ai agent monitor` and require appropriate access.
+
+In Azure Portal, open Application Insights, then **Transaction search** or
+**Logs**. Correlate `requests` and `dependencies` using `operation_Id`.
+The SDK operation ID can differ from the gateway Trace ID printed by `azd`;
+find the SDK request by `azure.ai.agentserver.response_id`, then use its
+`operation_Id` to retrieve its child spans.
+Allow a few minutes for ingestion after an invocation. Readers need monitoring
+data access, such as **Log Analytics Reader** on the workspace. No new runtime
+role assignment is needed to send telemetry through the managed connection.
+
+The workspace retains data for 30 days and has a 1 GB/day ingestion cap. The cap
+is a cost guardrail, not a guaranteed hard spending limit; hitting it can interrupt
+telemetry collection. Azure Monitor ingestion and retention can incur charges.
+
+To republish code without reconfiguring retrieval connections or entering the
+Web IQ key again:
+
+```powershell
+azd env set AGENT_MODE tools
+azd deploy iq-agent
+azd ai agent show iq-agent
+azd ai agent invoke iq-agent --version 8 --new-session "Reply with TELEMETRY_CHECK_OK. Do not use tools."
+```
+
+Replace `8` with the version returned by your deployment.
+
 ## Upload documents
 
 Use the Storage account and container from Terraform's configuration output:
@@ -199,7 +249,7 @@ verified.
 Conversation checkpoints are in memory and do not survive a runtime restart.
 
 AI Search has ongoing capacity costs; Hosted sessions, model tokens and Web IQ
-calls are billed separately. Stop unused hosted sessions in Foundry. To remove
+calls are billed separately, as is Azure Monitor telemetry. Stop unused hosted sessions in Foundry. To remove
 the sample, review `terraform -chdir=deploy plan -destroy` before running
 `terraform -chdir=deploy destroy`: **this deletes the sample's uploaded
 documents**, but leaves the existing RG intact. Keep Terraform state private

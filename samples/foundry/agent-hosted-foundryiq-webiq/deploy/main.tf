@@ -155,6 +155,46 @@ resource "azurerm_role_assignment" "developer_foundry" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+resource "azurerm_log_analytics_workspace" "telemetry" {
+  name                = "log-iq-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.demo.name
+  location            = var.location
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  daily_quota_gb      = 1
+  tags                = local.tags
+}
+
+resource "azurerm_application_insights" "agent" {
+  name                = "appi-iq-${local.suffix}"
+  resource_group_name = data.azurerm_resource_group.demo.name
+  location            = var.location
+  application_type    = "web"
+  workspace_id        = azurerm_log_analytics_workspace.telemetry.id
+  retention_in_days   = 30
+  tags                = local.tags
+}
+
+resource "azapi_resource" "project_telemetry" {
+  type      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-10-01-preview"
+  name      = "application-insights"
+  parent_id = azapi_resource.project.id
+  locks     = [azapi_resource.foundry.id]
+  body = {
+    properties = {
+      category      = "AppInsights"
+      authType      = "ApiKey"
+      target        = azurerm_application_insights.agent.id
+      isSharedToAll = false
+      credentials   = { key = azurerm_application_insights.agent.connection_string }
+      metadata = {
+        ApiType    = "Azure"
+        ResourceId = azurerm_application_insights.agent.id
+      }
+    }
+  }
+}
+
 resource "azapi_resource" "webiq" {
   # Web IQ is not yet in AzAPI's embedded schema; Azure validates its public API.
   schema_validation_enabled = false

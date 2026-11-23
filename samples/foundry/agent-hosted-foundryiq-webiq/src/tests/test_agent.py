@@ -1,16 +1,21 @@
 import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import httpx
-from azure.ai.agentserver.langgraph import from_langgraph
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 from mcp.types import CallToolResult, TextContent
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from agent import Configuration, ToolboxAuthentication, build_agent, expose_evidence
+from main import MetadataOnlyAdapter, MetadataTracer
 
 
 CONFIG = Configuration(
@@ -26,6 +31,57 @@ class ToolCallingModel(FakeMessagesListChatModel):
 
 
 class AgentTests(unittest.IsolatedAsyncioTestCase):
+    def test_telemetry_reuses_host_exporter_without_recording_content(self):
+        adapter = MagicMock()
+        adapter.get_agent_identifier.return_value = "iq-agent:7"
+        with patch("main.MetadataTracer") as tracer:
+            MetadataOnlyAdapter.init_tracing_internal(
+                adapter, app_insights_conn_str="must-not-create-a-second-exporter"
+            )
+        tracer.assert_called_once_with(
+            connection_string="", enable_content_recording=False, name="iq-agent:7"
+        )
+
+    def test_tool_queries_are_not_recorded_in_telemetry(self):
+        tracer = MetadataTracer(connection_string="", enable_content_recording=False)
+        with patch("main.AzureAIOpenTelemetryTracer.on_tool_start") as start:
+            tracer.on_tool_start(
+                {"name": "foundryiq"}, "private question",
+                inputs={"query_variants": ["private question"]}, run_id="run",
+            )
+        start.assert_called_once_with({"name": "foundryiq"}, "", inputs=None, run_id="run")
+
+    def test_exported_spans_keep_operations_but_redact_private_content(self):
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        with patch(
+            "langchain_azure_ai.callbacks.tracers.inference_tracing.otel_trace.get_tracer",
+            return_value=provider.get_tracer("privacy-test"),
+        ):
+            tracer = MetadataTracer(connection_string="", enable_content_recording=False)
+        model_run, tool_run = uuid4(), uuid4()
+        tracer.on_chat_model_start(
+            {"name": "ChatOpenAI"}, [[HumanMessage(content="PRIVATE_PROMPT")]],
+            run_id=model_run, metadata={"ls_model_name": "chat"},
+        )
+        tracer.on_llm_end(
+            LLMResult(generations=[[ChatGeneration(message=AIMessage(content="PRIVATE_RESPONSE"))]]),
+            run_id=model_run,
+        )
+        tracer.on_tool_start(
+            {"name": "foundryiq___knowledge_base_retrieve"}, "PRIVATE_QUERY",
+            inputs={"query_variants": ["PRIVATE_QUERY"]}, run_id=tool_run,
+        )
+        tracer.on_tool_end("PRIVATE_DOCUMENT", run_id=tool_run)
+        spans = exporter.get_finished_spans()
+        self.assertEqual(len(spans), 2)
+        attributes = json.dumps([dict(span.attributes) for span in spans])
+        self.assertIn("gen_ai.operation.name", attributes)
+        self.assertIn("foundryiq___knowledge_base_retrieve", attributes)
+        self.assertNotIn("PRIVATE_", attributes)
+        provider.shutdown()
+
     async def test_chat_mode_needs_no_toolbox_and_makes_no_mcp_calls(self):
         config = Configuration.from_environment({
             "MODEL_ENDPOINT": CONFIG.model_endpoint,
@@ -184,7 +240,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         ):
             graph = await build_agent(CONFIG, MagicMock())
         with patch.dict("os.environ", {"AZURE_AI_PROJECT_ENDPOINT": "https://demo.services.ai.azure.com/api/projects/demo"}):
-            host = from_langgraph(graph, credentials=MagicMock())
+            host = MetadataOnlyAdapter(graph, credentials=MagicMock())
             host.init_tracing()
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=host.app), base_url="http://agent.local"

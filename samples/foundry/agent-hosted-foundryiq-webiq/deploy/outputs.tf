@@ -18,4 +18,15 @@ output "configuration" {
     knowledge_base       = "documents"
     webiq_id             = azapi_resource.webiq.id
   }
+
+}
+
+output "observability" {
+  description = "Application Insights and Log Analytics resource identifiers; no ingestion credentials."
+  value = {
+    application_insights_id     = azurerm_application_insights.agent.id
+    application_insights_app_id = azurerm_application_insights.agent.app_id
+    workspace_id                = azurerm_log_analytics_workspace.telemetry.workspace_id
+    workspace_resource_id       = azurerm_log_analytics_workspace.telemetry.id
+  }
 }
